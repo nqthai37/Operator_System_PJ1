@@ -119,48 +119,27 @@ def process_resources(resources, ready_queue, current_time):
                 if not proc_finished.is_finished():
                     next_op = proc_finished.current_op()
                     if next_op[0] == "CPU":
+                        proc_finished.ready_queue_entry_time = current_time+1
                         ready_queue.append(proc_finished)
                     elif next_op[0] == "R":
                         resources[next_op[2]]["queue"].append(proc_finished)
-                proc_finished.finish_time = current_time
-                res["current_process"] = None
-        else:
-            res["gantt"].append("_")
-            if res["queue"]:
-                res["current_process"] = res["queue"].popleft()
-
-from collections import deque
-
-def all_finished(processes):
-    return all(proc.is_finished() for proc in processes)
-
-def process_resources(resources, ready_queue, current_time):
-    for res_id, res in resources.items():
-        if res["current_process"]:
-            res["current_process"].remaining_time -= 1
-            res["gantt"].append(res["current_process"].pid)
-            if res["current_process"].remaining_time == 0:
-                proc_finished = res["current_process"]
-                proc_finished.advance_op()
-                if not proc_finished.is_finished():
-                    next_op = proc_finished.current_op()
-                    if next_op[0] == "CPU":
-                        proc_finished.ready_queue_entry_time = current_time+1
-                        ready_queue.append(proc_finished)
-                        
-                    elif next_op[0] == "R":
-                        next_res = next_op[2]
-                        resources[next_res]["queue"].append(proc_finished)
-                else:
-                    proc_finished.finish_time = current_time
+                proc_finished.finish_time = current_time+1
                 res["current_process"] = None
         else:
             if res["queue"]:
                 proc_res = res["queue"].popleft()
                 res["current_process"] = proc_res
-                res["gantt"].append(proc_res.pid)
+                res["gantt"].append(proc_res.pid) 
+                res["current_process"].remaining_time -= 1     
             else:
                 res["gantt"].append("_")
+
+def update_waiting_time(ready_queue, current_cpu_process, resources):
+    for proc in ready_queue:
+        if proc is not current_cpu_process and all(proc is not res["current_process"] for res in resources.values()):
+            proc.waiting_time += 1
+            if (proc.pid==1):
+                print(proc.waiting_time)
 
 def round_robin(processes, resources, time_quantum):
     ready_queue = deque()
@@ -175,11 +154,6 @@ def round_robin(processes, resources, time_quantum):
                 ready_queue.append(proc)
                 proc.ready_queue_entry_time = current_time
 
-        for proc in ready_queue:
-            proc.waiting_time += 1
-
-        process_resources(resources, ready_queue, current_time)
-
         if current_cpu_process is None and ready_queue:
             current_cpu_process = ready_queue.popleft()
             if (current_cpu_process.ready_queue_entry_time > current_time):
@@ -187,6 +161,10 @@ def round_robin(processes, resources, time_quantum):
                 current_cpu_process = None
                
             time_slice = 0  
+        
+        update_waiting_time(ready_queue, current_cpu_process, resources)
+        process_resources(resources, ready_queue, current_time)
+        
 
         if current_cpu_process is None:
             cpu_gantt.append("_")
@@ -212,12 +190,13 @@ def round_robin(processes, resources, time_quantum):
                 ready_queue.append(current_cpu_process)
                 current_cpu_process = None  
                 time_slice = 0  
+          
         current_time += 1
-
+        
     return cpu_gantt
 
 
-def write_output(filename, cpu_gantt, resources, processes):
+def write_output(filename,cpu_gantt, resources, processes):
     turnaround_times = [proc.finish_time - proc.arrival_time for proc in processes]
     waiting_times = [proc.waiting_time for proc in processes]
     
